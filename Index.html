@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Map Drills - Naperville FD</title>
+  <!-- HERE Maps CSS -->
+  <link rel="stylesheet" type="text/css" href="https://js.api.here.com/v3/3.1/mapsjs-ui.css" />
+  <style>
+    #map {
+      height: 400px;
+      width: 100%;
+    }
+    /* Styles for the modal */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background-color: rgba(0, 0, 0, 0.4);
+      padding-top: 60px;
+    }
+    .modal-content {
+      background-color: #fefefe;
+      margin: 5% auto;
+      padding: 20px;
+      border: 1px solid #888;
+      width: 80%;
+    }
+    .close {
+      color: #aaa;
+      float: right;
+      font-size: 28px;
+      font-weight: bold;
+    }
+    .close:hover,
+    .close:focus {
+      color: black;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    #onSceneButton {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 20px;
+      font-size: 18px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    #onSceneButton:hover {
+      background-color: #45a049;
+    }
+    /* Additional styles for timer and feedback */
+  </style>
+</head>
+<body>
+
+<!-- Station selection modal -->
+<div id="stationModal" class="modal">
+    <div class="modal-content">
+      <span class="close" onclick="closeModal('stationModal')">&times;</span>
+      <h3>Select a Fire Station:</h3>
+      <select id="stationSelect" onchange="focusStation()">
+        <!-- Fire station options -->
+      </select>
+      <button onclick="prepareForStart()">Select Station</button>
+    </div>
+  </div>
+
+<!-- Start drill modal -->
+<div id="startModal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <span class="close" onclick="closeModal('startModal')">&times;</span>
+      <p id="modalText">Station Selected: </p>
+      <button onclick="startDrill()">Start</button>
+    </div>
+  </div>
+
+<!-- Stats and actions modal -->
+<div id="statsModal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <span class="close" onclick="closeModal('statsModal')">&times;</span>
+      <p>Drill Stats:</p>
+      <p id="drillStats"></p>
+      <button onclick="newRandomAddress()">New Random Address</button>
+      <button onclick="newStationSelection()">Select New Station</button>
+    </div>
+  </div>
+
+<!-- Timer and feedback display elements -->
+<div id="timer"></div>
+<div id="feedback"></div>
+
+<div id="map" style="height: 400px; width: 100%;"></div>
+
+<button id="onSceneButton" onclick="completeDrill()">On Scene</button>
+
+<!-- HERE Maps JavaScript APIs -->
+<script type="text/javascript" src="https://js.api.here.com/v3/3.1/mapsjs-core.js"></script>
+<script type="text/javascript" src="https://js.api.here.com/v3/3.1/mapsjs-service.js"></script>
+<script type="text/javascript" src="https://js.api.here.com/v3/3.1/mapsjs-ui.js"></script>
+<script type="text/javascript" src="https://js.api.here.com/v3/3.1/mapsjs-mapevents.js"></script>
+
+<script>
+var platform = new H.service.Platform({
+        'apikey': 'gEXUhOFFj4gB-RL9hvfTnSxjH7hbq2G2_dGm3tdt5hA'
+      })
+      var defaultLayers = platform.createDefaultLayers();
+      var map = new H.Map(document.getElementById('map'), defaultLayers.vector.normal.map, {
+        zoom: 12,
+        center: { lat: 41.7508, lng: -88.1535 }
+      });
+
+      var behavior = new H.mapevents.Behavior(new H.mapevents.MapEvents(map));
+      var ui = H.ui.UI.createDefault(map, defaultLayers);
+
+      // Function to start drawing a route
+      var routeLineString = new H.geo.LineString();
+      var routePolyline;
+
+      function startDrawingRoute() {
+        map.addEventListener('pointerdown', pointerDown);
+        map.addEventListener('pointermove', pointerMove);
+        map.addEventListener('pointerup', pointerUp);
+      }
+
+      function pointerDown(evt) {
+        var coord = map.screenToGeo(evt.currentPointer.viewportX, evt.currentPointer.viewportY);
+        routeLineString.pushPoint(coord);
+        routePolyline = new H.map.Polyline(routeLineString, { style: { lineWidth: 4 }});
+        map.addObject(routePolyline);
+      }
+
+      function pointerMove(evt) {
+        var coord = map.screenToGeo(evt.currentPointer.viewportX, evt.currentPointer.viewportY);
+        routeLineString.pushPoint(coord);
+        routePolyline.setGeometry(routeLineString);
+      }
+
+      function pointerUp(evt) {
+        map.removeEventListener('pointerdown', pointerDown);
+        map.removeEventListener('pointermove', pointerMove);
+        map.removeEventListener('pointerup', pointerUp);
+        // Route drawing complete, perform necessary actions
+      }
+
+      // Call this function when you want to start drawing a route
+      startDrawingRoute();
+
+      function undoLastSegment() {
+    if (routeLineString.getPointCount() > 1) {
+      // Remove the last point added to the LineString
+      routeLineString.removePoint(routeLineString.getPointCount() - 1);
+      routePolyline.setGeometry(routeLineString);
+    }
+  }
+
+  function restartRoute() {
+    // Clear the existing LineString and remove the polyline from the map
+    routeLineString = new H.geo.LineString();
+    map.removeObject(routePolyline);
+  }
+
+  // Station coordinates
+  var stations = {
+    'Station No. 1': {lat: 41.77317757125354, lng:-88.13353137101433},
+    'Station No. 2': {lat: 41.740699360285824, lng:-88.11743580354704},
+    'Station No. 3': {lat: 41.80225627783052, lng:-88.14247190354378},
+    'Station No. 4': {lat: 41.79274915628182, lng:-88.2038304323797},
+    'Station No. 5': {lat: 41.726554394650435, lng:-88.16795263053538},
+    'Station No. 6': {lat: 41.69454338138904, lng:-88.2013381035495},
+    'Station No. 7': {lat: 41.76614906533733, lng:-88.17877940233622},
+    'Station No. 8': {lat: 41.74726137196835, lng:-88.14743998460477},
+    'Station No. 9': {lat: 41.78462564376553, lng:-88.17059219100817},
+    'Station No. 10': {lat: 41.710566390842615, lng:-88.2092809930639}
+  };
+
+  var timer;
+  var startTime;
+  var map, ui, behavior;
+  var addresses = [
+    "123 Example Street, Naperville, IL",
+    "456 Another Ave, Naperville, IL",
+    // Add more addresses here
+  ];
+
+  
+
+    var defaultLayers = platform.createDefaultLayers();
+
+    map = new H.Map(
+      document.getElementById('map'),
+      defaultLayers.vector.normal.map,
+      {
+        zoom: 12,
+        center: { lat: 41.7508, lng: -88.1535 }
+      }
+    );
+
+    ui = H.ui.UI.createDefault(map, defaultLayers);
+    behavior = new H.mapevents.Behavior(new H.mapevents.MapEvents(map));
+
+    // Add markers for fire stations
+    for (var station in stations) {
+      console.log("Adding marker for:", station); // Debugging log
+      var marker = new H.map.Marker(stations[station]);
+      map.addObject(marker);
+    }
+
+    // Populate station select options
+    populateStations();
+  }
+
+  function populateStations() {
+  var select = document.getElementById('stationSelect');
+  for (var station in stations) {
+    console.log("Adding station:", station); // Debugging log
+    var option = document.createElement('option');
+    option.value = station;
+    option.text = station;
+    select.appendChild(option);
+  }
+  console.log("Stations populated"); // Debugging log
+}
+
+  window.onload = function() {
+    initMap();
+    populateStations();
+    showModal('stationModal');
+  };
+
+  function showModal(modalId) {
+    var modal = document.getElementById(modalId);
+    modal.style.display = "block";
+  }
+
+  function closeModal(modalId) {
+    var modal = document.getElementById(modalId);
+    modal.style.display = "none";
+  }
+
+  function prepareForStart() {
+    closeModal('stationModal');
+    var selectedStation = document.getElementById("stationSelect").value;
+    document.getElementById("modalText").innerHTML = `Selected Station: ${selectedStation}`;
+    var stationCoords = stations[selectedStation];
+    map.setCenter(stationCoords);
+    map.setZoom(15);
+    showModal('startModal');
+  }
+
+  function startDrill() {
+    closeModal('startModal');
+    startTimer();
+    var randomAddress = addresses[Math.floor(Math.random() * addresses.length)];
+    document.getElementById("feedback").innerText = `Navigate to: ${randomAddress}`;
+    // Logic for the user to draw the route
+  }
+
+  // Timer and feedback functions...
+function startTimer() {
+  startTime = new Date();
+  timer = setInterval(updateTimer, 1000);
+}
+
+function updateTimer() {
+  var currentTime = new Date();
+  var timeElapsed = (currentTime - startTime) / 1000;
+  document.getElementById("timer").innerText = `Time: ${timeElapsed} seconds`;
+}
+
+function stopTimer() {
+  clearInterval(timer);
+  var endTime = new Date();
+  var timeTaken = (endTime - startTime) / 1000;
+  displayFeedback(timeTaken);
+}
+
+function displayFeedback(timeTaken) {
+  document.getElementById("feedback").innerText = `Your time: ${timeTaken} seconds. Good job!`;
+}
+
+
+  function completeDrill() {
+      stopTimer();
+    // Logic for completing the drill...
+    showModal('statsModal');
+  }
+
+  function newRandomAddress() {
+    closeModal('statsModal');
+    startDrill();
+  }
+
+  function newStationSelection() {
+    closeModal('statsModal');
+    showModal('stationModal');
+  }
+
+  // Additional functions for modal management, timer, and feedback
+</script>
+
+<script async defer src="https://js.api.here.com/v3/3.1/mapsjs-core.js" type="text/javascript"></script>
+<script async defer src="https://js.api.here.com/v3/3.1/mapsjs-service.js" type="text/javascript"></script>
+<script async defer src="https://js.api.here.com/v3/3.1/mapsjs-ui.js" type="text/javascript"></script>
+<script async defer src="https://js.api.here.com/v3/3.1/mapsjs-mapevents.js" type="text/javascript"></script>
+
+</body>
+</html>

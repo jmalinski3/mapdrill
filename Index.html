@@ -71,6 +71,7 @@
         <!-- Fire station options -->
       </select>
       <button onclick="prepareForStart()">Select Station</button>
+      <button onclick="randomizeDrill()">Randomize Drill</button>
     </div>
   </div>
 
@@ -91,6 +92,7 @@
       <p id="drillStats"></p>
       <button onclick="newRandomAddress()">New Random Address</button>
       <button onclick="newStationSelection()">Select New Station</button>
+      <button onclick="randomizeDrill()">Randomize Drill</button>
     </div>
   </div>
 
@@ -302,6 +304,19 @@ function displayFeedback(timeTaken) {
   function newStationSelection() {
     closeModal('statsModal');
     showModal('stationModal');
+  }
+
+  function randomizeDrill() {
+    closeModal('stationModal');
+    closeModal('statsModal');
+    var stationNames = Object.keys(stations);
+    var randomStation = stationNames[Math.floor(Math.random() * stationNames.length)];
+    document.getElementById('stationSelect').value = randomStation;
+    var stationCoords = stations[randomStation];
+    map.setCenter(stationCoords);
+    map.setZoom(15);
+    document.getElementById("modalText").innerHTML = `Selected Station: ${randomStation}`;
+    showModal('startModal');
   }
 
   // Additional functions for modal management, timer, and feedback
